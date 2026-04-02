@@ -466,6 +466,7 @@ struct MenuRow: View {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(isHovered ? Color.white.opacity(0.08) : Color.clear)
             )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
@@ -515,6 +516,7 @@ struct MenuToggleRow: View {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(isHovered ? Color.white.opacity(0.08) : Color.clear)
             )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }

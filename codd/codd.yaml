@@ -1,0 +1,379 @@
+version: 0.1.0
+project:
+  frameworks: []
+  name: Claude Island
+  language: swift
+ai_command: claude --print
+coding_principles: null
+scan:
+  source_dirs:
+  - src/
+  test_dirs:
+  - tests/
+  doc_dirs:
+  - docs/
+  config_files: []
+  exclude:
+  - '**/node_modules/**'
+  - '**/__pycache__/**'
+  - '**/dist/**'
+graph:
+  store: jsonl
+  path: codd/scan
+bands:
+  green:
+    min_confidence: 0.9
+    min_evidence_count: 2
+  amber:
+    min_confidence: 0.5
+propagation:
+  max_depth: 10
+  stop_at_contract_boundary: true
+conventions: []
+wave_config:
+  '1':
+  - node_id: test:acceptance-criteria
+    output: docs/test/acceptance_criteria.md
+    title: Acceptance Criteria
+    depends_on:
+    - id: req:claude-island-requirements
+      relation: derives_from
+      semantic: governance
+    conventions:
+    - targets:
+      - test:acceptance-criteria
+      reason: Every requirement (UI states, socket latency, session lifecycle, permission
+        routing, non-notch fallback) must map to a verifiable criterion. Untested
+        requirements block release.
+    - targets:
+      - module:session-monitor
+      - module:ipc
+      reason: Socket state updates must reflect in UI within 100 ms (REQ-PERF-02)
+        and reconnection must require no app restart (REQ-REL-01); both are release-blocking
+        acceptance conditions.
+  - node_id: governance:decisions
+    output: docs/governance/decisions.md
+    title: Architecture Decision Records
+    depends_on:
+    - id: req:claude-island-requirements
+      relation: derives_from
+      semantic: governance
+    conventions:
+    - targets:
+      - governance:decisions
+      reason: App Sandbox must be disabled for Unix socket and filesystem access (REQ-SEC-01);
+        hardened runtime must be enabled on all release builds (REQ-SEC-02). Both
+        decisions are release-blocking and must be formally recorded.
+    - targets:
+      - governance:decisions
+      reason: Sparkle EdDSA private keys must never be committed to version control
+        (REQ-SEC-04). This constraint must be documented as an ADR enforced in CI
+        and the release pipeline.
+    - targets:
+      - governance:decisions
+      reason: All release binaries must be notarized with Apple before distribution
+        (REQ-SEC-03, REQ-REL-PIPE-01). Shipping without notarization is release-blocking.
+  '2':
+  - node_id: design:system-design
+    output: docs/design/system_design.md
+    title: System Design Overview
+    depends_on:
+    - id: test:acceptance-criteria
+      relation: constrained_by
+      semantic: governance
+    - id: governance:decisions
+      relation: constrained_by
+      semantic: governance
+    conventions:
+    - targets:
+      - design:system-design
+      reason: Architecture must reflect App Sandbox disabled and hardened runtime
+        enabled. macOS 15.6+ on Apple Silicon and Intel is the minimum supported platform
+        (REQ-COMPAT-01, REQ-COMPAT-02).
+    - targets:
+      - design:system-design
+      reason: Anonymous telemetry only; no conversation content or personal data may
+        be transmitted (REQ-SEC-05). The analytics subsystem boundary must be explicit
+        in the system design.
+    - targets:
+      - design:system-design
+      reason: All third-party dependencies (Sparkle, swift-markdown, mixpanel-swift)
+        must be resolved via Swift Package Manager (REQ-BUILD-01). No other dependency
+        managers are permitted.
+  '3':
+  - node_id: design:ui-design
+    output: docs/design/ui_design.md
+    title: Notch Overlay UI Design
+    depends_on:
+    - id: design:system-design
+      relation: depends_on
+      semantic: technical
+    conventions:
+    - targets:
+      - design:ui-design
+      reason: Overlay must animate at 60 fps using spring animations with no visible
+        jank (REQ-PERF-01, REQ-UI-03). Frame-drop risk must be assessed for all state
+        transitions.
+    - targets:
+      - design:ui-design
+      reason: Non-notch fallback to a floating pill at the top of the selected screen
+        is mandatory for release on MacBooks without a notch (REQ-UI-04, REQ-COMPAT-03).
+    - targets:
+      - design:ui-design
+      reason: Screen selection must persist across restarts using a stable display
+        identifier (REQ-SCREEN-03). Graceful fallback to an available screen on disconnect
+        is required and must not crash the app (REQ-SCREEN-04, REQ-REL-03).
+  - node_id: design:ipc-hook-design
+    output: docs/design/ipc_hook_design.md
+    title: IPC and Hook Integration Design
+    depends_on:
+    - id: design:system-design
+      relation: depends_on
+      semantic: technical
+    conventions:
+    - targets:
+      - design:ipc-hook-design
+      reason: All hook-to-app communication must use a local Unix domain socket exclusively;
+        no network sockets are permitted (REQ-INT-02). Socket reconnection must be
+        automatic and require no app restart (REQ-HOOK-04, REQ-REL-01).
+    - targets:
+      - design:ipc-hook-design
+      reason: Hook installation into ~/.claude/hooks/ must require explicit user consent
+        on first launch (REQ-HOOK-01). The hooks installer toggle must support runtime
+        enable/disable (REQ-HOOK-03).
+    - targets:
+      - design:ipc-hook-design
+      reason: Hook installation and socket communication logic must be covered by
+        integration tests (REQ-TEST-03). Untested IPC paths block release.
+  - node_id: design:session-lifecycle-design
+    output: docs/design/session_lifecycle_design.md
+    title: Session Lifecycle and Monitoring Design
+    depends_on:
+    - id: design:system-design
+      relation: depends_on
+      semantic: technical
+    - id: design:ipc-hook-design
+      relation: depends_on
+      semantic: technical
+    conventions:
+    - targets:
+      - design:session-lifecycle-design
+      reason: Session state updates received from the Unix socket must be reflected
+        in UI within 100 ms (REQ-PERF-02). This is a release-blocking latency constraint.
+    - targets:
+      - design:session-lifecycle-design
+      reason: All SessionPhase transitions (idle → processing → waitingForInput →
+        ended) must be covered by unit tests (REQ-TEST-02). Untested state machines
+        block release.
+    - targets:
+      - design:session-lifecycle-design
+      reason: Approval responses must be routed to the correct tmux pane via session
+        matching (REQ-PERM-05, REQ-INT-04, REQ-INT-05). Incorrect routing is a release-blocking
+        correctness failure.
+  '4':
+  - node_id: design:chat-rendering-design
+    output: docs/design/chat_rendering_design.md
+    title: Chat History and Rendering Design
+    depends_on:
+    - id: design:session-lifecycle-design
+      relation: depends_on
+      semantic: technical
+    conventions:
+    - targets:
+      - design:chat-rendering-design
+      reason: JSONL parsing must execute off the main thread (REQ-PERF-03). Blocking
+        the main thread during file parsing is a release-blocking performance violation.
+    - targets:
+      - design:chat-rendering-design
+      reason: A missing or corrupt JSONL file must not crash the app; the chat view
+        must degrade to an empty or error state (REQ-REL-02). Unhandled parse exceptions
+        block release.
+    - targets:
+      - design:chat-rendering-design
+      reason: Chat content must never be included in any telemetry payload; only anonymous
+        lifecycle events are permitted (REQ-SEC-05).
+  - node_id: design:release-pipeline-design
+    output: docs/design/release_pipeline_design.md
+    title: Release Pipeline Design
+    depends_on:
+    - id: governance:decisions
+      relation: constrained_by
+      semantic: governance
+    - id: design:system-design
+      relation: depends_on
+      semantic: technical
+    conventions:
+    - targets:
+      - design:release-pipeline-design
+      reason: Release binaries must be notarized using Apple notarytool before distribution
+        (REQ-SEC-03, REQ-REL-PIPE-01). A DMG must be generated, notarized, and signed
+        with the Sparkle EdDSA key (REQ-REL-PIPE-02, REQ-REL-PIPE-03).
+    - targets:
+      - design:release-pipeline-design
+      reason: Sparkle updates must be signed with EdDSA keys that are never committed
+        to VCS (REQ-SEC-04, REQ-UPD-02). The appcast at https://claudeisland.com/appcast.xml
+        must be updated per release (REQ-UPD-04, REQ-REL-PIPE-05).
+    - targets:
+      - design:release-pipeline-design
+      reason: All release builds must use the Developer ID distribution certificate
+        and hardened runtime (REQ-BUILD-02). Release without this signing configuration
+        is rejected by Apple notarization.
+  '5':
+  - node_id: detail:notch_overlay_state_machine
+    output: docs/detailed_design/notch_overlay_state_machine.md
+    title: Notch Overlay State Machine
+    depends_on:
+    - id: design:ui-design
+      relation: depends_on
+      semantic: technical
+    conventions:
+    - targets:
+      - detail:notch_overlay_state_machine
+      reason: All state transitions (closed → popping → opened and reverse) must be
+        implemented as spring animations achieving 60 fps (REQ-PERF-01, REQ-UI-03).
+        Any transition path that drops below 60 fps is a release-blocking defect.
+    - targets:
+      - detail:notch_overlay_state_machine
+      reason: Overlay must expand automatically when a tool permission request arrives
+        and the terminal is not visible (REQ-PERM-04). Missing this auto-expansion
+        path blocks release.
+  - node_id: detail:session_state_machine
+    output: docs/detailed_design/session_state_machine.md
+    title: Session State Machine Diagram
+    depends_on:
+    - id: design:session-lifecycle-design
+      relation: depends_on
+      semantic: technical
+    conventions:
+    - targets:
+      - detail:session_state_machine
+      reason: Every transition in the SessionPhase state machine must have a corresponding
+        unit test (REQ-TEST-02). A diagram with untested transitions is implementation-incomplete
+        and blocks release.
+    - targets:
+      - detail:session_state_machine
+      reason: The /clear command must reset session state (REQ-MON-05). The diagram
+        must include this transition or the feature is omitted.
+  - node_id: detail:ipc_message_flow
+    output: docs/detailed_design/ipc_message_flow.md
+    title: IPC Message Protocol and Flow Diagrams
+    depends_on:
+    - id: design:ipc-hook-design
+      relation: depends_on
+      semantic: technical
+    - id: design:session-lifecycle-design
+      relation: depends_on
+      semantic: technical
+    conventions:
+    - targets:
+      - detail:ipc_message_flow
+      reason: All messages must transit the local Unix domain socket exclusively (REQ-INT-02).
+        Protocol must carry session and tmux pane identifiers sufficient to route
+        approvals correctly (REQ-PERM-05).
+    - targets:
+      - detail:ipc_message_flow
+      reason: Reconnection sequence must be specified at the protocol level to satisfy
+        automatic reconnection without app restart (REQ-HOOK-04, REQ-REL-01). Missing
+        reconnection flow blocks release.
+    - targets:
+      - detail:ipc_message_flow
+      reason: Integration tests must cover socket communication paths derived from
+        this protocol (REQ-TEST-03).
+  - node_id: detail:component_dependency_map
+    output: docs/detailed_design/component_dependency_map.md
+    title: Component Dependency Map
+    depends_on:
+    - id: design:system-design
+      relation: depends_on
+      semantic: technical
+    - id: design:ui-design
+      relation: depends_on
+      semantic: technical
+    - id: design:ipc-hook-design
+      relation: depends_on
+      semantic: technical
+    - id: design:session-lifecycle-design
+      relation: depends_on
+      semantic: technical
+    - id: design:chat-rendering-design
+      relation: depends_on
+      semantic: technical
+    - id: design:release-pipeline-design
+      relation: depends_on
+      semantic: technical
+    conventions:
+    - targets:
+      - detail:component_dependency_map
+      reason: Component boundaries must assume App Sandbox is disabled; no sandboxed
+        entitlements may be relied upon (REQ-SEC-01). All SPM package dependencies
+        (Sparkle, swift-markdown, mixpanel-swift) must appear as declared edges (REQ-BUILD-01).
+    - targets:
+      - detail:component_dependency_map
+      reason: The analytics component must be isolated so that conversation content
+        can provably never reach the Mixpanel SDK (REQ-SEC-05). A dependency path
+        from chat data to analytics is a release-blocking privacy violation.
+  '6':
+  - node_id: test:test-strategy
+    output: docs/test/test_strategy.md
+    title: Test Strategy
+    depends_on:
+    - id: test:acceptance-criteria
+      relation: derives_from
+      semantic: governance
+    - id: detail:session_state_machine
+      relation: depends_on
+      semantic: technical
+    - id: detail:ipc_message_flow
+      relation: depends_on
+      semantic: technical
+    conventions:
+    - targets:
+      - test:test-strategy
+      reason: A unit test target must be added to the Xcode project (REQ-TEST-01).
+        Shipping without a test target is release-blocking.
+    - targets:
+      - test:test-strategy
+      reason: SessionPhase state machine transitions must be covered by unit tests
+        (REQ-TEST-02) and hook/socket communication by integration tests (REQ-TEST-03).
+        Gaps in these areas block release.
+  - node_id: plan:implementation-plan
+    output: docs/plan/implementation_plan.md
+    title: Implementation Plan
+    depends_on:
+    - id: test:acceptance-criteria
+      relation: constrained_by
+      semantic: governance
+    - id: test:test-strategy
+      relation: depends_on
+      semantic: technical
+    - id: detail:notch_overlay_state_machine
+      relation: depends_on
+      semantic: technical
+    - id: detail:session_state_machine
+      relation: depends_on
+      semantic: technical
+    - id: detail:ipc_message_flow
+      relation: depends_on
+      semantic: technical
+    - id: detail:component_dependency_map
+      relation: depends_on
+      semantic: technical
+    - id: design:release-pipeline-design
+      relation: depends_on
+      semantic: technical
+    conventions:
+    - targets:
+      - plan:implementation-plan
+      reason: Plan must include a dedicated phase for adding the unit test target
+        and achieving SessionPhase test coverage (REQ-TEST-01, REQ-TEST-02). Omitting
+        this phase blocks release.
+    - targets:
+      - plan:implementation-plan
+      reason: Release phase must include notarization, DMG generation, Sparkle EdDSA
+        signing, GitHub release creation, and appcast update steps in order (REQ-REL-PIPE-01
+        through REQ-REL-PIPE-05). Shipping without the full pipeline is release-blocking.
+    - targets:
+      - plan:implementation-plan
+      reason: Plan must account for Sparkle private key management outside VCS from
+        day one (REQ-SEC-04). Committing keys even temporarily is a release-blocking
+        security violation.
