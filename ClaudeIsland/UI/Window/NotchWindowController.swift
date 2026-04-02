@@ -70,6 +70,7 @@ class NotchWindowController: NSWindowController {
                 switch status {
                 case .opened:
                     // Accept mouse events when opened so buttons work
+                    notchWindow?.wantsMouseEvents = true
                     notchWindow?.ignoresMouseEvents = false
                     // Don't steal focus when opened by notification (task finished)
                     if viewModel?.openReason != .notification {
@@ -78,6 +79,7 @@ class NotchWindowController: NSWindowController {
                     }
                 case .closed, .popping:
                     // Ignore mouse events when closed so clicks pass through
+                    notchWindow?.wantsMouseEvents = false
                     notchWindow?.ignoresMouseEvents = true
                 }
             }

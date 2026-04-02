@@ -64,6 +64,12 @@ class NotchPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    // MARK: - Mouse event acceptance state
+
+    /// Tracks whether the panel should accept mouse events (set by NotchWindowController).
+    /// Used to correctly restore ignoresMouseEvents after a click-through re-post.
+    var wantsMouseEvents = false
+
     // MARK: - Click-through for areas outside the panel content
 
     override func sendEvent(_ event: NSEvent) {
@@ -81,10 +87,14 @@ class NotchPanel: NSPanel {
                 let screenLocation = convertPoint(toScreen: locationInWindow)
                 ignoresMouseEvents = true
 
-                // Re-post the event after a tiny delay, then restore mouse event handling
+                // Re-post the event, then restore to the authoritative state.
+                // Do NOT blindly restore to false: if the panel closed (e.g. via
+                // handleMouseDown) before this async block runs, wantsMouseEvents
+                // will already be false and the window should stay transparent.
                 DispatchQueue.main.async { [weak self] in
-                    self?.repostMouseEvent(event, at: screenLocation)
-                    self?.ignoresMouseEvents = false
+                    guard let self else { return }
+                    self.repostMouseEvent(event, at: screenLocation)
+                    self.ignoresMouseEvents = !self.wantsMouseEvents
                 }
                 return
             }
